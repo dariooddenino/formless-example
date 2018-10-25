@@ -1,0 +1,15 @@
+{
+    "set": "local",
+    "depends": [
+        "console",
+        "effect",
+        "prelude",
+        "psci-support",
+	"simple-json",
+	"simple-ajax",
+	"halogen-formless",
+	"generics-rep"
+    ],
+    "name": "formless-example",
+    "source": ""
+}

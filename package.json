@@ -1,0 +1,19 @@
+{
+  "name": "formless-example",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "pulp build --to dist/app.js",
+    "watch": "pulp -w build --to dist/app.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "purescript": "^0.12.0"
+  }
+}
