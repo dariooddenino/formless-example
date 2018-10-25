@@ -97,18 +97,3 @@ acceptEmpty validator = Validation \form str ->
     res <- runValidation validator form str
     pure $ Just <$> res
 
--- | This is the validator that we will use for our email field.
--- | If the sendEmail checkbox is not checked, this runs the `validEmail`
--- | validator only when the field is not empty.
--- | If the checkbox is checked, the email field becomes mandatory.
-emailValidator ::
-  forall form m t.
-  Newtype (form Record FormField) { sendEmail :: FormField FieldError Boolean Boolean | t } =>
-  Monad m =>
-  Validation form m FieldError String (Maybe String)
-emailValidator = Validation $ \form email ->
-  if F.getInput _sendEmail form
-  then runValidation (nonEmpty >>> validEmail >>> F.hoistFn_ Just) form email
-  else runValidation (acceptEmpty validEmail) form email
-  where
-    _sendEmail = SProxy :: SProxy "sendEmail"

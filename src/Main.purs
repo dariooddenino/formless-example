@@ -8,6 +8,7 @@ import Data.Newtype (class Newtype, wrap)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Console (log)
+import Formless (Validation(..), runValidation)
 import Formless as F
 import Halogen (ClassName(..))
 import Halogen as H
@@ -16,7 +17,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver (runUI)
-import Validation (FieldError, emailValidator, nonEmpty, showError, validPhone)
+import Validation (FieldError, acceptEmpty, emailValidator, nonEmpty, showError, validEmail, validPhone)
 
 type Input = Unit
 type State = Unit
@@ -86,6 +87,19 @@ validators = Form
   , phone: nonEmpty >>> validPhone
   , sendEmail: F.hoistFn_ identity
   }
+  where
+    -- | This is the validator that we will use for our email field.
+    -- | If the sendEmail checkbox is not checked, this runs the `validEmail`
+    -- | validator only when the field is not empty.
+    -- | If the checkbox is checked, the email field becomes mandatory.
+    emailValidator ::
+      forall m.
+      Monad m =>
+      Validation Form m FieldError String (Maybe String)
+    emailValidator = Validation $ \form email ->
+      if F.getInput prx.sendEmail form
+      then runValidation (nonEmpty >>> validEmail >>> F.hoistFn_ Just) form email
+      else runValidation (acceptEmpty validEmail) form email
 
 -- | Renders the error when necessary.
 renderError :: forall i p. Maybe String -> HH.HTML i p
@@ -149,6 +163,7 @@ renderForm { form } =
     [ HH.label
       [ HP.class_ $ ClassName "checkbox" ]
       [ HH.input [ HP.type_ HP.InputCheckbox
+                 , HP.checked $ F.getInput prx.sendEmail form
                    -- When the value changes, we retrigger the email field validation.
                  , HE.onChecked $ HE.input $ \b -> (F.setValidate_ prx.sendEmail b) `F.andThen` (F.modifyValidate_ prx.email identity)
                  ]
