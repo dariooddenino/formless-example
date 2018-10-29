@@ -5,10 +5,10 @@
         "effect",
         "prelude",
         "psci-support",
-	"simple-json",
-	"simple-ajax",
-	"halogen-formless",
-	"generics-rep"
+	    "simple-json",
+	    "halogen-formless",
+	    "generics-rep",
+        "remote-data"
     ],
     "name": "formless-example",
     "source": ""

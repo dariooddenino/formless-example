@@ -27,19 +27,19 @@ in  let overrides = {
 in  let additions = {
 	halogen-formless =
           mkPackage
-	  ["halogen","halogen-renderless","variant","heterogeneous"]
+          ["halogen","halogen-renderless","variant","heterogeneous"]
           "https://github.com/thomashoneyman/purescript-halogen-formless.git"
           "v0.4.0"	
       , halogen-renderless =
           mkPackage
-	  ["halogen","prelude","control"]
+          ["halogen","prelude","control"]
           "https://github.com/thomashoneyman/purescript-halogen-renderless.git"
           "v0.0.3"	
-      , simple-ajax =
+      , remote-data =
           mkPackage
-	  ["affjax","simple-json"]
-          "https://github.com/dariooddenino/purescript-simple-ajax.git"
-          "v0.4.1"	
+	      ["bifunctors", "either", "profunctor-lenses", "generics-rep"]
+          "https://github.com/krisajenkins/purescript-remotedata.git"
+          "v4.0.0"
 }
 
 in  upstream ⫽ overrides ⫽ additions

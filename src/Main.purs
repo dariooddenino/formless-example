@@ -17,7 +17,8 @@ import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver (runUI)
-import Validation (FieldError, acceptEmpty, emailValidator, nonEmpty, showError, validEmail, validPhone)
+import Network.RemoteData (RemoteData(..))
+import Validation (FieldError, acceptEmpty, availableUserName, nonEmpty, showError, validEmail, validPhone, validUserName)
 
 type Input = Unit
 type State = Unit
@@ -62,7 +63,7 @@ component =
 -- | The email field is mandatory only when `sendEmail` is checked.
 -- | We are also checking that it's in the correct format.
 -- | The phone field is mandatory and will have to be in the correct format.
-newtype Form r f = Form (r ( userName :: f FieldError String String
+newtype Form r f = Form (r ( userName :: f FieldError (RemoteData Unit String) (RemoteData Unit String)
                            , email :: f FieldError String (Maybe String)
                            , phone :: f FieldError String String
                            , sendEmail :: f FieldError Boolean Boolean
@@ -76,13 +77,19 @@ prx = F.mkSProxies $ F.FormProxy :: F.FormProxy Form
 
 -- | Our initial inputs are all empty.
 initialInputs :: Form Record F.InputField
-initialInputs = F.mkInputFields (F.FormProxy :: F.FormProxy Form)
+--initialInputs = F.mkInputFields (F.FormProxy :: F.FormProxy Form)
+initialInputs = F.wrapInputFields
+  { userName: Success ""
+  , email: ""
+  , phone: ""
+  , sendEmail: false
+  }
 
 -- | Here we are using the validators we defined.
 -- | sendEmail has no validation.
 validators :: Form Record (F.Validation Form Aff)
 validators = Form
-  { userName: F.hoistFn_ identity
+  { userName: validUserName >>> availableUserName
   , email: emailValidator
   , phone: nonEmpty >>> validPhone
   , sendEmail: F.hoistFn_ identity
@@ -105,10 +112,13 @@ validators = Form
 renderError :: forall i p. Maybe String -> HH.HTML i p
 renderError Nothing = HH.p_ [ HH.text "" ]
 renderError (Just e) = HH.p [ HP.class_ $ ClassName "help is-danger" ] [ HH.text e ]
-
+-- onBlur (FocusEvent -> Maybe i) -> IProp
 -- | This is the function that renders our form.
 renderForm :: F.State Form Aff -> F.HTML' Form Aff
 renderForm { form } =
+  let isloading Loading = true
+      isloading _ = false
+  in
   HH.div_
   [ HH.div
     [ HP.class_ $ ClassName "field" ]
@@ -120,8 +130,13 @@ renderForm { form } =
       [ HH.input [ HP.type_ HP.InputText
                  , HP.class_ $ ClassName "input"
                  , HP.required true
-                 , HE.onValueInput $ HE.input $ F.setValidate prx.userName
-                 , HP.value $ F.getInput prx.userName form
+                 , HP.disabled $ isloading $ F.getInput prx.userName form
+                 , HE.onValueInput $ HE.input $ F.set prx.userName <<< Success
+                   -- on blur we set the field to loading, so that we can disable it during
+                   -- validation, and then run the actual validation.
+                 , HE.onBlur $ HE.input_ $ let
+                   val = F.getInput prx.userName form
+                   in (F.set_ prx.userName Loading) `F.andThen` (F.setValidate_ prx.userName val)
                  ]
       , renderError $ showError $ F.getResult prx.userName form
       ]
@@ -137,7 +152,6 @@ renderForm { form } =
                  , HP.class_ $ ClassName "input"
                  , HP.required $ F.getInput prx.sendEmail form
                  , HE.onValueInput $ HE.input $ F.setValidate prx.email
-                 , HP.value $ F.getInput prx.email form
                  ]
       , renderError $ showError $ F.getResult prx.email form
       ]
@@ -153,7 +167,6 @@ renderForm { form } =
                  , HP.class_ $ ClassName "input"
                  , HP.required true
                  , HE.onValueInput $ HE.input $ F.setValidate prx.phone
-                 , HP.value $ F.getInput prx.phone form
                  ]
       , renderError $ showError $ F.getResult prx.phone form
       ]
@@ -163,9 +176,9 @@ renderForm { form } =
     [ HH.label
       [ HP.class_ $ ClassName "checkbox" ]
       [ HH.input [ HP.type_ HP.InputCheckbox
-                 , HP.checked $ F.getInput prx.sendEmail form
                    -- When the value changes, we retrigger the email field validation.
-                 , HE.onChecked $ HE.input $ \b -> (F.setValidate_ prx.sendEmail b) `F.andThen` (F.modifyValidate_ prx.email identity)
+                 , HE.onChecked $ HE.input $ \b ->
+                   (F.setValidate_ prx.sendEmail b) `F.andThen` (F.modifyValidate_ prx.email identity)
                  ]
       , HH.text $ "Send me spam emails"
       ]

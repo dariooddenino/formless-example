@@ -2,16 +2,19 @@ module Validation where
 
 import Prelude
 
+import Data.Array (elem)
 import Data.Either (Either(..), either, fromRight)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
-import Data.String (null)
+import Data.String (length, null)
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags as Regex.Flags
-import Formless (FormField, Validation(..), hoistFnE_, runValidation)
+import Effect.Aff (Aff, Milliseconds(..), delay)
+import Formless (FormField, Validation(..), hoistFnE_, hoistFnME_, hoistFn_, runValidation)
 import Formless as F
+import Network.RemoteData (RemoteData(..))
 import Partial.Unsafe (unsafePartial)
 import Type.Prelude (SProxy(..))
 
@@ -68,6 +71,17 @@ nonEmpty = hoistFnE_ $ \str ->
   then Left Missing
   else Right str
 
+-- | Check that a username is inserted, and that it's made of letters only.
+validUserName :: forall form m. Monad m => Validation form m FieldError (RemoteData Unit String) (RemoteData Unit String)
+validUserName = hoistFnE_ $ case _ of
+  Success s ->
+    if null s
+    then Left Missing
+    else if Regex.test userNameRegex s
+         then Right (Success s)
+         else Left InvalidUserName
+  _ -> Left Missing
+
 -- | This is the function that we will use to validate emails.
 validEmail :: forall form m. Monad m => Validation form m FieldError String String
 validEmail = hoistFnE_ $ \str ->
@@ -97,3 +111,22 @@ acceptEmpty validator = Validation \form str ->
     res <- runValidation validator form str
     pure $ Just <$> res
 
+-- | This functions performs a (fake) effectful check to verify that
+-- | the userName is not already in use.
+availableUserName :: forall form. Validation form Aff FieldError (RemoteData Unit String) (RemoteData Unit String)
+availableUserName = hoistFnME_ $ \userName -> do
+  case userName of
+    Success un -> do
+      isUsed <- checkUserName un
+      pure $
+        if isUsed
+        then Left ExistingUserName
+        else Right (Success un)
+    r -> pure $ Right r
+
+-- | This is supposed to check whether the userName
+-- | is already present in the db.
+checkUserName :: String -> Aff Boolean
+checkUserName u = do
+  delay $ Milliseconds 1000.0
+  pure $ elem u [ "admin", "formless", "user" ]
