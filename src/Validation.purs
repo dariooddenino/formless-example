@@ -4,6 +4,7 @@ import Prelude
 
 import Data.Array (elem)
 import Data.Either (Either(..), either, fromRight)
+import Data.Foldable (class Foldable)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Eq (genericEq)
 import Data.Generic.Rep.Show (genericShow)
@@ -11,6 +12,7 @@ import Data.Maybe (Maybe(..))
 import Data.String (null)
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags as Regex.Flags
+import Data.Traversable (class Traversable, sequence, traverse)
 import Effect.Aff (Aff, Milliseconds(..), delay)
 import Formless (Validation(..), hoistFnE_, hoistFnME_, runValidation)
 import Partial.Unsafe (unsafePartial)
@@ -34,6 +36,21 @@ data RemoteField a = Validating a | NotValidating a
 derive instance genericRemoteField :: Generic (RemoteField a) _
 instance eqRemoteField :: Eq a => Eq (RemoteField a) where
   eq = genericEq
+instance functorRemoteField :: Functor RemoteField where
+  map f (Validating a) = Validating $ f a
+  map f (NotValidating a) = NotValidating $ f a
+instance foldableRemoteField :: Foldable RemoteField where
+  foldr f z (NotValidating a) = a `f` z
+  foldr f z (Validating a) = a `f` z
+  foldl f z (NotValidating a) = z `f` a
+  foldl f z (Validating a) = z `f` a
+  foldMap f (NotValidating a) = f a
+  foldMap f (Validating a) = f a
+instance traversableRemoteField :: Traversable RemoteField where
+  traverse f (Validating a) = Validating <$> f a
+  traverse f (NotValidating a) = NotValidating <$> f a
+  sequence (Validating x) = Validating <$> x
+  sequence (NotValidating x) = NotValidating <$> x
 
 -- | Just a function to extract the value.
 unRemoteField :: forall a. RemoteField a -> a
@@ -92,14 +109,29 @@ nonEmpty = hoistFnE_ $ \str ->
   else Right str
 
 -- | Check that a username is inserted, and that it's made of letters only.
-validUserName :: forall form m. Monad m => Validation form m FieldError (RemoteField String) (RemoteField String)
-validUserName = hoistFnE_ $ \f ->
-  let s = unRemoteField f in
+-- validUserName :: forall form m. Monad m => Validation form m FieldError (RemoteField String) (RemoteField String)
+-- validUserName = hoistFnE_ $ \f ->
+--   let s = unRemoteField f in
+--     if null s
+--     then Left Missing
+--     else if Regex.test userNameRegex s
+--          then Right f
+--          else Left InvalidUserName
+validUserName :: forall form m. Monad m => Validation form m FieldError String String
+validUserName = hoistFnE_ $ \s ->
     if null s
     then Left Missing
     else if Regex.test userNameRegex s
-         then Right f
+         then Right s
          else Left InvalidUserName
+
+overRemoteField ::
+  forall form m i o.
+  Monad m =>
+  Validation form m FieldError i o ->
+  Validation form m FieldError (RemoteField i) (RemoteField o)
+overRemoteField validator = Validation \form i -> do
+  ((<$>) sequence) $ traverse (runValidation validator form) i
 
 -- | This is the function that we will use to validate emails.
 validEmail :: forall form m. Monad m => Validation form m FieldError String String

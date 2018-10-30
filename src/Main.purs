@@ -16,7 +16,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver (runUI)
-import Validation (FieldError, RemoteField(..), acceptEmpty, availableUserName, isValidating, nonEmpty, showError, toggleValidation, validEmail, validPhone, validUserName)
+import Validation (FieldError, RemoteField(..), acceptEmpty, availableUserName, isValidating, nonEmpty, overRemoteField, showError, toggleValidation, validEmail, validPhone, validUserName)
 
 type Input = Unit
 type State = Unit
@@ -87,7 +87,7 @@ initialInputs = F.wrapInputFields
 -- | sendEmail has no validation.
 validators :: Form Record (F.Validation Form Aff)
 validators = Form
-  { userName: validUserName >>> availableUserName
+  { userName: overRemoteField validUserName >>> availableUserName
   , email: emailValidator
   , phone: nonEmpty >>> validPhone
   , sendEmail: F.hoistFn_ identity
