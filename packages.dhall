@@ -35,11 +35,6 @@ in  let additions = {
           ["halogen","prelude","control"]
           "https://github.com/thomashoneyman/purescript-halogen-renderless.git"
           "v0.0.3"	
-      , remote-data =
-          mkPackage
-	      ["bifunctors", "either", "profunctor-lenses", "generics-rep"]
-          "https://github.com/krisajenkins/purescript-remotedata.git"
-          "v4.0.0"
 }
 
 in  upstream ⫽ overrides ⫽ additions

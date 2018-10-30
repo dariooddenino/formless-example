@@ -7,7 +7,6 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, wrap)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Effect.Console (log)
 import Formless (Validation(..), runValidation)
 import Formless as F
 import Halogen (ClassName(..))
@@ -17,8 +16,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver (runUI)
-import Network.RemoteData (RemoteData(..))
-import Validation (FieldError, acceptEmpty, availableUserName, nonEmpty, showError, validEmail, validPhone, validUserName)
+import Validation (FieldError, RemoteField(..), acceptEmpty, availableUserName, isValidating, nonEmpty, showError, toggleValidation, validEmail, validPhone, validUserName)
 
 type Input = Unit
 type State = Unit
@@ -63,7 +61,7 @@ component =
 -- | The email field is mandatory only when `sendEmail` is checked.
 -- | We are also checking that it's in the correct format.
 -- | The phone field is mandatory and will have to be in the correct format.
-newtype Form r f = Form (r ( userName :: f FieldError (RemoteData Unit String) (RemoteData Unit String)
+newtype Form r f = Form (r ( userName :: f FieldError (RemoteField String) (RemoteField String)
                            , email :: f FieldError String (Maybe String)
                            , phone :: f FieldError String String
                            , sendEmail :: f FieldError Boolean Boolean
@@ -79,7 +77,7 @@ prx = F.mkSProxies $ F.FormProxy :: F.FormProxy Form
 initialInputs :: Form Record F.InputField
 --initialInputs = F.mkInputFields (F.FormProxy :: F.FormProxy Form)
 initialInputs = F.wrapInputFields
-  { userName: Success ""
+  { userName: NotValidating ""
   , email: ""
   , phone: ""
   , sendEmail: false
@@ -112,13 +110,10 @@ validators = Form
 renderError :: forall i p. Maybe String -> HH.HTML i p
 renderError Nothing = HH.p_ [ HH.text "" ]
 renderError (Just e) = HH.p [ HP.class_ $ ClassName "help is-danger" ] [ HH.text e ]
--- onBlur (FocusEvent -> Maybe i) -> IProp
+
 -- | This is the function that renders our form.
 renderForm :: F.State Form Aff -> F.HTML' Form Aff
 renderForm { form } =
-  let isloading Loading = true
-      isloading _ = false
-  in
   HH.div_
   [ HH.div
     [ HP.class_ $ ClassName "field" ]
@@ -130,13 +125,13 @@ renderForm { form } =
       [ HH.input [ HP.type_ HP.InputText
                  , HP.class_ $ ClassName "input"
                  , HP.required true
-                 , HP.disabled $ isloading $ F.getInput prx.userName form
-                 , HE.onValueInput $ HE.input $ F.set prx.userName <<< Success
-                   -- on blur we set the field to loading, so that we can disable it during
-                   -- validation, and then run the actual validation.
-                 , HE.onBlur $ HE.input_ $ let
-                   val = F.getInput prx.userName form
-                   in (F.set_ prx.userName Loading) `F.andThen` (F.setValidate_ prx.userName val)
+                 , HP.disabled $ isValidating $ F.getInput prx.userName form
+                 , HE.onValueInput $ HE.input $ F.set prx.userName <<< NotValidating
+                   -- on blur we first set the field to validating to disable the input
+                   -- and then run the validation on the nonvalidating field so that it's enabled
+                   -- again at the end
+                 , HE.onBlur $ HE.input_ $
+                     (F.modify_ prx.userName toggleValidation) `F.andThen` (F.modifyValidate_ prx.userName toggleValidation)
                  ]
       , renderError $ showError $ F.getResult prx.userName form
       ]
