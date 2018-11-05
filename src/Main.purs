@@ -7,6 +7,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, wrap)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Effect.Class.Console (logShow)
 import Formless (Validation(..), runValidation)
 import Formless as F
 import Halogen (ClassName(..))
@@ -18,15 +19,20 @@ import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver (runUI)
 import Validation (FieldError, RemoteField(..), acceptEmpty, availableUserName, isValidating, nonEmpty, overRemoteField, showError, toggleValidation, validEmail, validPhone, validUserName)
 
+-- | Our wrapper component won't have any Input or State in this example.
 type Input = Unit
 type State = Unit
 
+-- | Its only query is to handle form messages.
 data Query a
   = HandleFormless (F.Message' Form) a
 
+-- | We use `Void` since we're not sending any message.
 type Message = Void
 
+-- | The child component is our form, which has the default Formless queries.
 type ChildQuery = F.Query' Form Aff
+-- | We don't need anything more complex than `Unit` for our slot, since we have only one child.
 type ChildSlot = Unit
 
 -- | This is the component that will hold the form.
@@ -42,11 +48,13 @@ component =
 
     where
 
+      -- State == Input
       initialState = identity
 
       render :: State -> H.ParentHTML Query ChildQuery ChildSlot Aff
       render state =
         HH.div_
+        -- Here we're mounting the form as a child component.
         [ HH.slot unit F.component { initialInputs
                                    , validators
                                    , render: renderForm
@@ -54,14 +62,23 @@ component =
         ]
 
       eval :: Query ~> H.ParentDSL State Query ChildQuery ChildSlot Message Aff
-      eval (HandleFormless _ next) = pure next
+      eval (HandleFormless m next) = next <$ do
+        case m of
+          -- The form was submitted with validated data.
+          F.Submitted formOutput -> do
+            let form = F.unwrapOutputFields formOutput
+            H.liftEffect $ logShow $ form
+          -- Here we could react to other messages, like F.Changed or F.Emit
+          _ -> pure unit
 
--- | Our form will have three fields.
--- | The userName will perform a fake async validation.
--- | The email field is mandatory only when `sendEmail` is checked.
+-- | Our form will have four fields.
+-- | - `userName` will perform some sync validations and a fake async validation.
+-- | Its input is wrapped in `RemoteField` to keep track of whether there's an undergoing validation.
+-- | - `email` is mandatory only when `sendEmail` is checked.
 -- | We are also checking that it's in the correct format.
--- | The phone field is mandatory and will have to be in the correct format.
-newtype Form r f = Form (r ( userName :: f FieldError (RemoteField String) (RemoteField String)
+-- | - `phone` is mandatory and will have to be in the correct format.
+-- | `sendEmail` is a checkbox that alters the email field validation.
+newtype Form r f = Form (r ( userName :: f FieldError (RemoteField String) String
                            , email :: f FieldError String (Maybe String)
                            , phone :: f FieldError String String
                            , sendEmail :: f FieldError Boolean Boolean
@@ -73,9 +90,9 @@ derive instance newtypeForm :: Newtype (Form r f) _
 prx :: F.SProxies Form
 prx = F.mkSProxies $ F.FormProxy :: F.FormProxy Form
 
--- | Our initial inputs are all empty.
+-- | Our initial inputs are all empty / false.
+-- | We could have used just `F.mkInputFields (F.FormProxy :: F.FormProxy Form)` if we only had monoidal values.
 initialInputs :: Form Record F.InputField
---initialInputs = F.mkInputFields (F.FormProxy :: F.FormProxy Form)
 initialInputs = F.wrapInputFields
   { userName: NotValidating ""
   , email: ""
@@ -93,10 +110,10 @@ validators = Form
   , sendEmail: F.hoistFn_ identity
   }
   where
-    -- | This is the validator that we will use for our email field.
-    -- | If the sendEmail checkbox is not checked, this runs the `validEmail`
-    -- | validator only when the field is not empty.
-    -- | If the checkbox is checked, the email field becomes mandatory.
+    -- This is the validator that we will use for our email field.
+    -- If the sendEmail checkbox is not checked, this runs the `validEmail`
+    -- validator only when the field is not empty.
+    -- If the checkbox is checked, the email field becomes mandatory.
     emailValidator ::
       forall m.
       Monad m =>
@@ -106,7 +123,7 @@ validators = Form
       then runValidation (nonEmpty >>> validEmail >>> F.hoistFn_ Just) form email
       else runValidation (acceptEmpty validEmail) form email
 
--- | Renders the error when necessary.
+-- | A helper function which renders the error when necessary.
 renderError :: forall i p. Maybe String -> HH.HTML i p
 renderError Nothing = HH.p_ [ HH.text "" ]
 renderError (Just e) = HH.p [ HP.class_ $ ClassName "help is-danger" ] [ HH.text e ]
@@ -128,11 +145,14 @@ renderForm { form } =
                  , HP.disabled $ isValidating $ F.getInput prx.userName form
                  , HE.onValueInput $ HE.input $ F.set prx.userName <<< NotValidating
                    -- on blur we first set the field to validating to disable the input
-                   -- and then run the validation on the nonvalidating field so that it's enabled
+                   -- and then run the validation on the NonValidating field so that it's enabled
                    -- again at the end
                  , HE.onBlur $ HE.input_ $
                      (F.modify_ prx.userName toggleValidation) `F.andThen` (F.modifyValidate_ prx.userName toggleValidation)
                  ]
+      , HH.p
+        [ HP.class_ $ ClassName "help" ]
+        [ HH.text "Try 'admin', 'formless' or 'user' to get an async error." ]
       , renderError $ showError $ F.getResult prx.userName form
       ]
     ]
@@ -178,8 +198,14 @@ renderForm { form } =
       , HH.text $ "Send me spam emails"
       ]
     ]
+  , HH.button
+    [ HP.class_ $ ClassName "button"
+    , HE.onClick $ HE.input_ F.Submit
+    ]
+    [ HH.text "Submit" ]
   ]
 
+-- | Our main function mounts the component in our page.
 main :: Effect Unit
 main = do
   HA.runHalogenAff do

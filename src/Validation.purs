@@ -17,6 +17,8 @@ import Effect.Aff (Aff, Milliseconds(..), delay)
 import Formless (Validation(..), hoistFnE_, hoistFnME_, runValidation)
 import Partial.Unsafe (unsafePartial)
 
+
+
 -- | The possible errors that can appear in our form.
 data FieldError
   = InvalidEmail
@@ -30,8 +32,25 @@ derive instance genericFieldError :: Generic FieldError _
 instance showFieldError :: Show FieldError where
   show = genericShow
 
+-- | We want to show some meaningful text to the user,
+-- | so we can't just use the output of `genericShow`.
+errorToString :: FieldError -> String
+errorToString = case _ of
+  InvalidEmail -> "The email is not valid."
+  InvalidPhone -> "The phone number is not valid."
+  InvalidUserName -> "Your user name can contain letters only."
+  ExistingUserName -> "The user name you chose is not available."
+  Missing -> "This field is required."
+
+-- | A function that renders an error if present.
+showError :: forall o. Maybe (Either FieldError o) -> Maybe String
+showError = (=<<) (either (pure <<< errorToString) (const Nothing))
+
+
+
 -- | This is a wrapper data type we will use to represent
 -- | validations in progress for async fields.
+-- | Hopefully this won't be necessary in future versions of Formless.
 data RemoteField a = Validating a | NotValidating a
 derive instance genericRemoteField :: Generic (RemoteField a) _
 instance eqRemoteField :: Eq a => Eq (RemoteField a) where
@@ -68,19 +87,7 @@ toggleValidation :: forall a. RemoteField a -> RemoteField a
 toggleValidation (Validating a) = NotValidating a
 toggleValidation (NotValidating a) = Validating a
 
--- | We want to show some meaningful text to the user,
--- | so we can't just use the output of `genericShow`.
-errorToString :: FieldError -> String
-errorToString = case _ of
-  InvalidEmail -> "The email is not valid."
-  InvalidPhone -> "The phone number is not valid."
-  InvalidUserName -> "Your user name can contain letters only."
-  ExistingUserName -> "The user name you chose is not available."
-  Missing -> "This field is required."
 
--- | A function that renders an error if present.
-showError :: forall o. Maybe (Either FieldError o) -> Maybe String
-showError = (=<<) (either (pure <<< errorToString) (const Nothing))
 
 -- | It's unsafe, but we are using it only for hard-coded
 -- | and tested regexes, so it's good enough for this example.
@@ -101,6 +108,9 @@ phoneRegex = unsafeRegexFromString "^([\\(\\)\\+0-9\\s\\-\\#]+)$"
 userNameRegex :: Regex.Regex
 userNameRegex = unsafeRegexFromString "^([a-zA-Z]+)$"
 
+
+
+
 -- | We will use this validator to check whether fields are empty.
 nonEmpty :: forall form m. Monad m => Validation form m FieldError String String
 nonEmpty = hoistFnE_ $ \str ->
@@ -108,15 +118,7 @@ nonEmpty = hoistFnE_ $ \str ->
   then Left Missing
   else Right str
 
--- | Check that a username is inserted, and that it's made of letters only.
--- validUserName :: forall form m. Monad m => Validation form m FieldError (RemoteField String) (RemoteField String)
--- validUserName = hoistFnE_ $ \f ->
---   let s = unRemoteField f in
---     if null s
---     then Left Missing
---     else if Regex.test userNameRegex s
---          then Right f
---          else Left InvalidUserName
+-- | Check whether a username is not null and valid (in our case that means that letters only have been used.)
 validUserName :: forall form m. Monad m => Validation form m FieldError String String
 validUserName = hoistFnE_ $ \s ->
     if null s
@@ -125,6 +127,8 @@ validUserName = hoistFnE_ $ \s ->
          then Right s
          else Left InvalidUserName
 
+-- | This is a helper function that we can use to run take a validator that runs on a `a`
+-- | and run it with a `RemoteField a`.
 overRemoteField ::
   forall form m i o.
   Monad m =>
@@ -147,7 +151,6 @@ validPhone = hoistFnE_ $ \str ->
   then Right str
   else Left InvalidPhone
 
--- | We can think of this as a higher-order validator.
 -- | It takes a validator as input, and runs it only when
 -- | the input is not empty.
 acceptEmpty ::
@@ -164,17 +167,17 @@ acceptEmpty validator = Validation \form str ->
 
 -- | This functions performs a (fake) effectful check to verify that
 -- | the userName is not already in use.
-availableUserName :: forall form. Validation form Aff FieldError (RemoteField String) (RemoteField String)
+availableUserName :: forall form. Validation form Aff FieldError (RemoteField String) String
 availableUserName = hoistFnME_ $ \f -> do
   let userName = unRemoteField f
   isUsed <- checkUserName userName
   pure $
     if isUsed
     then Left ExistingUserName
-    else Right f
+    else Right userName
 
 -- | This is supposed to check whether the userName
--- | is already present in the db.
+-- | is already present in a db, for example.
 checkUserName :: String -> Aff Boolean
 checkUserName u = do
   delay $ Milliseconds 1000.0
